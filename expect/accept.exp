@@ -1,0 +1,14 @@
+#!/usr/bin/expect -f
+set timeout -1
+spawn phoronix-test-suite
+match_max 100000
+expect -exact "\r
+    Do you agree to these terms and wish to proceed (Y/n): "
+send -- "y\r"
+expect -exact "\r
+    Enable anonymous usage / statistics reporting (Y/n): "
+send -- "n\r"
+expect -exact "\r
+    Enable anonymous statistical reporting of installed software / hardware (Y/n): "
+send -- "n\r"
+expect eof

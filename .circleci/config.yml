@@ -1,0 +1,73 @@
+version: 2.1
+
+workflows:
+  version: 2
+  benchmark:
+    jobs:
+      - cimg
+      - cimg-vol
+      - results:
+          requires:
+            - cimg
+            - cimg-vol
+
+jobs:
+  cimg:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - install
+      - benchmark:
+          result: cimg
+
+  cimg-vol:
+    docker:
+      - image: petewoods/cimg-base:stable-vol
+    steps:
+      - install
+      - benchmark:
+          result: cimg-vol
+
+  results:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - install
+      - attach_workspace:
+          at: /home/circleci/.phoronix-test-suite/test-results
+      - run:
+          name: Merge test results
+          command: phoronix-test-suite merge-results cimg cimg-vol
+      - store_artifacts:
+          path: "/home/circleci/.phoronix-test-suite/test-results"
+
+commands:
+  install:
+    steps:
+      - checkout
+      - run: DEBIAN_FRONTEND=noninteractive sudo apt-get -y update
+      - run:
+          name: Install test suite
+          command: DEBIAN_FRONTEND=noninteractive sudo apt-get -y install expect phoronix-test-suite
+      - run:
+          name: Accept test suite licence
+          command: ./expect/accept.exp
+      - run:
+          name: Install compile speed tests
+          command: phoronix-test-suite install pts/compilebench
+
+  benchmark:
+    parameters:
+      result:
+        type: string
+    steps:
+      - run:
+          name: List mounts
+          command: mount
+      - run:
+          name: Run test suite
+          command: ./expect/benchmark.exp << parameters.result >>
+      - persist_to_workspace:
+          root: /home/circleci/.phoronix-test-suite/test-results
+          paths:
+            - << parameters.result >>
