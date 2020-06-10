@@ -36,10 +36,23 @@ jobs:
       - attach_workspace:
           at: /home/circleci/.phoronix-test-suite/test-results
       - run:
+          name: Patch broken PDF code
+          command: sudo patch -d/ -p0 < pts-pdf-fix.diff
+      - run:
           name: Merge test results
-          command: phoronix-test-suite merge-results cimg cimg-vol
+          command: |
+            phoronix-test-suite merge-results cimg cimg-vol | grep -oE 'merge-[0-9]+' | xargs phoronix-test-suite result-file-to-pdf
+            mkdir -p pdfs
+            mv ~/*.pdf pdfs
+      - run:
+          name: Pack test results
+          command: tar czfv test-results.tgz ~/.phoronix-test-suite/test-results
       - store_artifacts:
           path: "/home/circleci/.phoronix-test-suite/test-results"
+      - store_artifacts:
+          path: test-results.tgz
+      - store_artifacts:
+          path: pdfs
 
 commands:
   install:
@@ -48,7 +61,12 @@ commands:
       - run: DEBIAN_FRONTEND=noninteractive sudo apt-get -y update
       - run:
           name: Install test suite
-          command: DEBIAN_FRONTEND=noninteractive sudo apt-get -y install expect phoronix-test-suite
+          command: |
+            DEBIAN_FRONTEND=noninteractive sudo apt-get -y install \
+              expect \
+              phoronix-test-suite \
+              php-fpdf \
+              ttf-dejavu-core
       - run:
           name: Accept test suite licence
           command: ./expect/accept.exp
