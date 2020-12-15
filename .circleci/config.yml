@@ -36,9 +36,6 @@ jobs:
       - attach_workspace:
           at: /home/circleci/.phoronix-test-suite/test-results
       - run:
-          name: Patch broken PDF code
-          command: sudo patch -d/ -p0 < pts-pdf-fix.diff
-      - run:
           name: Merge test results
           command: |
             phoronix-test-suite merge-results cimg cimg-vol | grep -oE 'merge-[0-9]+' | xargs phoronix-test-suite result-file-to-pdf
@@ -60,13 +57,20 @@ commands:
       - checkout
       - run: DEBIAN_FRONTEND=noninteractive sudo apt-get -y update
       - run:
-          name: Install test suite
+          name: Install dependencies
           command: |
             DEBIAN_FRONTEND=noninteractive sudo apt-get -y install \
               expect \
-              phoronix-test-suite \
+              gdebi-core \
               php-fpdf \
+              python2 \
               ttf-dejavu-core
+      - run:
+          name: Download PTS
+          command: wget 'http://phoronix-test-suite.com/releases/repo/pts.debian/files/phoronix-test-suite_10.0.1_all.deb'
+      - run:
+          name: Install PTS
+          command: DEBIAN_FRONTEND=noninteractive sudo gdebi -n 'phoronix-test-suite_10.0.1_all.deb'
       - run:
           name: Accept test suite licence
           command: ./expect/accept.exp

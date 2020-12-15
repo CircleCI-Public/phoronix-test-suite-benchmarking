@@ -4,27 +4,18 @@ set name [lindex $argv 0];
 
 spawn phoronix-test-suite benchmark pts/compilebench
 match_max 100000
-expect -exact "\r
-    Disk Test Configuration\r
-        1: Initial Create\r
-        2: Compile\r
-        3: Read Compiled Tree\r
-        4: Test All Options\r
-        Test: "
+expect "*Test: *"
 send -- "4\r"
-expect -exact "\r
-    Would you like to save these test results (Y/n): "
+expect "*Would you like to save these test results (Y/n): *"
 send -- "y\r"
-expect -exact "y\r
-    Enter a name to save these results under: "
+expect "*Enter a name for the result file: *"
 send -- "$name\r"
-expect -exact "\r
-    Enter a unique name to describe this test run / configuration: "
+expect "*Enter a unique name to describe this test run / configuration: *"
 send -- "$name\r"
-expect -exact "\r
-New Description: "
+expect "*New Description: *"
 send -- "$name\r"
-expect -exact "\r
-    Would you like to upload the results to OpenBenchmarking.org (Y/n): "
+expect "*Do you want to view the text results of the testing (Y/n): *"
+send -- "n\r"
+expect "*Would you like to upload the results to OpenBenchmarking.org (y/n): *"
 send -- "n\r"
 expect eof
