@@ -1,9 +1,0 @@
-#!/usr/bin/expect -f
-set timeout -1
-spawn phoronix-test-suite
-match_max 100000
-expect "*Do you agree to these terms and wish to proceed (y/n): *"
-send -- "y\r"
-expect "*Enable anonymous usage / statistics reporting (y/n): *"
-send -- "n\r"
-expect eof

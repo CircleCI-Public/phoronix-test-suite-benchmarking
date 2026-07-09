@@ -1,82 +1,92 @@
 version: 2.1
 
+# The install / benchmark / report logic lives in ./scripts so it can be shared
+# with GitHub Actions and run locally (see test-benchmark.sh). This config just
+# wires those scripts to the executor matrix.
+
 workflows:
   version: 2
   benchmark:
     jobs:
-      - cimg
-      - cimg-vol
+      - benchmark:
+          name: gen1
+          executor: gen1
+          result: gen1
+      - benchmark:
+          name: gen2
+          executor: gen2
+          result: gen2
+      - benchmark:
+          name: gen3
+          executor: gen3
+          result: gen3
       - results:
           requires:
-            - cimg
-            - cimg-vol
+            - gen1
+            - gen2
+            - gen3
+
+executors:
+  gen1:
+    resource_class: large
+    docker:
+      - image: cimg/base:current-24.04
+  gen2:
+    resource_class: large.gen2
+    docker:
+      - image: cimg/base:current-24.04
+  gen3:
+    resource_class: large.gen3
+    machine:
+      image: ubuntu-2404:current
 
 jobs:
-  cimg:
-    docker:
-      - image: cimg/base:stable
+  benchmark:
+    parameters:
+      executor:
+        type: executor
+      result:
+        type: string
+    executor: << parameters.executor >>
     steps:
       - install
       - benchmark:
-          result: cimg
-
-  cimg-vol:
-    docker:
-      - image: petewoods/cimg-base:stable-vol
-    steps:
-      - install
-      - benchmark:
-          result: cimg-vol
+          result: << parameters.result >>
 
   results:
-    docker:
-      - image: cimg/base:stable
+    executor: gen2
     steps:
-      - install
+      # Report-only job: needs the PTS binary to merge/render, not the test
+      # profiles -- skip installing them.
+      - install:
+          install-tests: false
       - attach_workspace:
           at: /home/circleci/.phoronix-test-suite/test-results
       - run:
-          name: Merge test results
-          command: |
-            phoronix-test-suite merge-results cimg cimg-vol | grep -oE 'merge-[0-9]+' | xargs phoronix-test-suite result-file-to-pdf
-            mkdir -p pdfs
-            mv ~/*.pdf pdfs
+          name: Merge test results into HTML report
+          command: ./scripts/report.sh gen1 gen2 gen3
       - run:
           name: Pack test results
           command: tar czfv test-results.tgz ~/.phoronix-test-suite/test-results
+          when: always
       - store_artifacts:
           path: "/home/circleci/.phoronix-test-suite/test-results"
       - store_artifacts:
           path: test-results.tgz
       - store_artifacts:
-          path: pdfs
+          path: reports
 
 commands:
   install:
+    parameters:
+      install-tests:
+        type: boolean
+        default: true
     steps:
       - checkout
-      - run: DEBIAN_FRONTEND=noninteractive sudo apt-get -y update
       - run:
-          name: Install dependencies
-          command: |
-            DEBIAN_FRONTEND=noninteractive sudo apt-get -y install \
-              expect \
-              gdebi-core \
-              php-fpdf \
-              python2 \
-              ttf-dejavu-core
-      - run:
-          name: Download PTS
-          command: wget 'http://phoronix-test-suite.com/releases/repo/pts.debian/files/phoronix-test-suite_10.0.1_all.deb'
-      - run:
-          name: Install PTS
-          command: DEBIAN_FRONTEND=noninteractive sudo gdebi -n 'phoronix-test-suite_10.0.1_all.deb'
-      - run:
-          name: Accept test suite licence
-          command: ./expect/accept.exp
-      - run:
-          name: Install compile speed tests
-          command: phoronix-test-suite install pts/compilebench
+          name: Install PTS<<# parameters.install-tests >> + benchmark tests<</ parameters.install-tests >>
+          command: PTS_INSTALL_TESTS=<< parameters.install-tests >> ./scripts/install.sh
 
   benchmark:
     parameters:
@@ -84,11 +94,9 @@ commands:
         type: string
     steps:
       - run:
-          name: List mounts
-          command: mount
-      - run:
-          name: Run test suite
-          command: ./expect/benchmark.exp << parameters.result >>
+          name: Run benchmark
+          no_output_timeout: 60m
+          command: ./scripts/benchmark.sh << parameters.result >>
       - persist_to_workspace:
           root: /home/circleci/.phoronix-test-suite/test-results
           paths:

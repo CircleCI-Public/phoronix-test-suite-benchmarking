@@ -1,0 +1,76 @@
+name: benchmark
+
+# Runs the Phoronix benchmark the same way as .circleci/config.yml, reusing the
+# scripts in ./scripts. The benchmark job produces a result; the separate report
+# job turns it into an HTML report. The result is passed between jobs as an
+# artifact (GitHub Actions' equivalent of the CircleCI workspace).
+#
+# Unlike CircleCI (which compares its resource-class generations gen1/gen2/gen3),
+# this runs a single x86-64 github-hosted runner. To compare more hardware, add
+# entries to a matrix -- e.g. ubuntu-24.04-arm for ARM64, or larger-runner
+# labels for higher core counts -- and pass each result name to report.sh.
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  benchmark:
+    name: benchmark
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PTS + benchmark tests
+        run: ./scripts/install.sh
+      - name: Run benchmark
+        run: ./scripts/benchmark.sh x86
+      - name: Stage result
+        run: |
+          mkdir -p artifact
+          cp -r "$HOME/.phoronix-test-suite/test-results/x86" artifact/
+      - name: Upload result
+        uses: actions/upload-artifact@v4
+        with:
+          name: result-x86
+          path: artifact
+
+  results:
+    name: results
+    needs: benchmark
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      # Report-only job: needs the PTS binary to merge/render, not the test
+      # profiles -- skip installing them.
+      - name: Install PTS
+        run: PTS_INSTALL_TESTS=false ./scripts/install.sh
+      - name: Download benchmark results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: result-*
+          path: downloaded
+          merge-multiple: true
+      - name: Stage results for PTS
+        run: |
+          mkdir -p "$HOME/.phoronix-test-suite/test-results"
+          cp -r downloaded/. "$HOME/.phoronix-test-suite/test-results/"
+      - name: Merge test results into HTML report
+        run: ./scripts/report.sh x86
+      - name: Upload HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: report
+          path: reports
+      - name: Stage raw results
+        if: always()
+        run: |
+          mkdir -p raw-results
+          cp -r "$HOME/.phoronix-test-suite/test-results/." raw-results/ 2>/dev/null || true
+      - name: Upload raw results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: raw-results
