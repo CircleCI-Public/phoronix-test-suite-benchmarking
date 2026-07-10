@@ -4,6 +4,11 @@ version: 2.1
 # with GitHub Actions and run locally (see test-benchmark.sh). This config just
 # wires those scripts to the executor matrix.
 
+orbs:
+  # Installs the `gh` CLI, used by the results job to pull the GitHub Actions
+  # x86 benchmark result for merging (see scripts/fetch-gha-result.sh).
+  gh: circleci/github-cli@3.0.0
+
 workflows:
   version: 2
   benchmark:
@@ -62,9 +67,22 @@ jobs:
           install-tests: false
       - attach_workspace:
           at: /home/circleci/.phoronix-test-suite/test-results
+      # Pull the GitHub Actions x86 benchmark result for this commit so it can be
+      # merged alongside the CircleCI generations. Best-effort: if it's missing
+      # (GHA still running, failed, or no token configured) the report is still
+      # produced from gen1/gen2/gen3 alone. Needs GITHUB_TOKEN / GH_TOKEN
+      # (actions:read on this repo) set as a project/context env var.
+      - gh/install
+      - run:
+          name: Fetch GitHub Actions benchmark result
+          command: ./scripts/fetch-gha-result.sh
       - run:
           name: Merge test results into HTML report
-          command: ./scripts/report.sh gen1 gen2 gen3
+          command: |
+            results=(gen1 gen2 gen3)
+            # x86 dir only exists if the GHA fetch above succeeded.
+            [ -d "$HOME/.phoronix-test-suite/test-results/x86" ] && results+=(x86)
+            ./scripts/report.sh "${results[@]}"
       - run:
           name: Pack test results
           command: tar czfv test-results.tgz ~/.phoronix-test-suite/test-results
