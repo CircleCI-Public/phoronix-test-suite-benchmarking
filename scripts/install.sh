@@ -22,6 +22,11 @@ echo "== Installing system dependencies =="
 DEBIAN_FRONTEND=noninteractive sudo apt-get -y update
 # PTS is a PHP app (php-cli + extensions). libelf-dev/bc/bison/flex/libssl-dev
 # are build-linux-kernel's build deps, which PTS does not pull on 24.04.
+# rustc/cargo + build-essential/autoconf + pkg-config/libxkbcommon-dev + unzip:
+# build-wasmer (its declared build-utilities+rust deps; the wasmer 2.2.0 crate
+# graph pulls xkbcommon-sys, which needs pkg-config to locate libxkbcommon-dev).
+# PTS can auto-install these, but that path needs interactive sudo, so we install
+# them up front here (matching how the other test deps are handled).
 DEBIAN_FRONTEND=noninteractive sudo apt-get -y install \
   git \
   php-cli \
@@ -35,7 +40,15 @@ DEBIAN_FRONTEND=noninteractive sudo apt-get -y install \
   bc \
   bison \
   flex \
-  libssl-dev
+  libssl-dev \
+  rustc \
+  cargo \
+  build-essential \
+  autoconf \
+  pkg-config \
+  libcurl4-openssl-dev \
+  libxkbcommon-dev \
+  unzip
 
 echo "== Installing Phoronix Test Suite (${PTS_REF}) from git =="
 # PTS stopped publishing tagged .deb releases after 10.8.4 (2022), which predates

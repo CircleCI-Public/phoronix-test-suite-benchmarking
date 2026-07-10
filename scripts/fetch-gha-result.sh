@@ -22,8 +22,9 @@
 #   GHA_WORKFLOW       workflow name/file     (default: benchmark)
 #   GHA_ARTIFACT       artifact to download   (default: result-x86)
 #   GHA_RESULT_NAME    PTS result dir name    (default: x86)
-#   GHA_WAIT_TIMEOUT   seconds to wait        (default: 1800)
-#   GHA_POLL_INTERVAL  seconds between polls  (default: 30)
+#   GHA_NORUN_GRACE    seconds to wait for a run to *appear*   (default: 180)
+#   GHA_WAIT_TIMEOUT   seconds to wait once a run is running   (default: 5400)
+#   GHA_POLL_INTERVAL  seconds between polls                   (default: 30)
 #
 set -uo pipefail
 
@@ -32,7 +33,8 @@ SHA="${GHA_SHA:-${CIRCLE_SHA1:-}}"
 WORKFLOW="${GHA_WORKFLOW:-benchmark}"
 ARTIFACT="${GHA_ARTIFACT:-result-x86}"
 RESULT_NAME="${GHA_RESULT_NAME:-x86}"
-TIMEOUT="${GHA_WAIT_TIMEOUT:-1800}"
+TIMEOUT="${GHA_WAIT_TIMEOUT:-5400}"
+GRACE="${GHA_NORUN_GRACE:-180}"
 INTERVAL="${GHA_POLL_INTERVAL:-30}"
 
 DEST="${HOME}/.phoronix-test-suite/test-results"
@@ -49,10 +51,15 @@ skip() {
 case "${REPO}" in ?*/?*) : ;; *) skip "repo slug unknown (${REPO})" ;; esac
 command -v gh >/dev/null 2>&1 || skip "gh CLI not found on PATH"
 
-echo "== Waiting for GitHub Actions '${WORKFLOW}' run at ${SHA} (repo ${REPO}, up to ${TIMEOUT}s) =="
+echo "== Waiting for GitHub Actions '${WORKFLOW}' run at ${SHA} (repo ${REPO}; up to ${GRACE}s to appear, then ${TIMEOUT}s while running) =="
 
+# Two separate waits: a short grace for a run to *appear* (GHA registers within
+# seconds of a push, so if none shows up it isn't coming -- don't burn the full
+# timeout on branches GHA doesn't build), then a generous timeout once a run is
+# seen in progress.
 run_id=""; status=""; conclusion=""
-deadline=$(( SECONDS + TIMEOUT ))
+seen_run=0
+start=${SECONDS}
 while :; do
   # Newest run matching this commit, as TSV: databaseId, status, conclusion.
   # `first // {}` yields empty fields when no run exists for the commit yet.
@@ -67,13 +74,19 @@ while :; do
   if [ -z "${run_id}" ]; then
     echo "   no run for this commit yet..."
   elif [ "${status}" != "completed" ]; then
+    seen_run=1
     echo "   run ${run_id} status=${status}..."
   else
     echo "   run ${run_id} completed (conclusion=${conclusion})."
     break
   fi
 
-  [ "${SECONDS}" -lt "${deadline}" ] || skip "timed out after ${TIMEOUT}s waiting for the GHA run"
+  elapsed=$(( SECONDS - start ))
+  if [ "${seen_run}" -eq 1 ]; then
+    [ "${elapsed}" -lt "${TIMEOUT}" ] || skip "timed out after ${TIMEOUT}s waiting for in-progress run ${run_id}"
+  else
+    [ "${elapsed}" -lt "${GRACE}" ] || skip "no GHA run found for ${SHA} within ${GRACE}s"
+  fi
   sleep "${INTERVAL}"
 done
 
