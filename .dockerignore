@@ -1,0 +1,8 @@
+# The Dockerfile copies nothing from the build context; keep it minimal.
+.git
+.idea
+pdfs
+test-results
+*.tgz
+*.deb
+*.pdf
