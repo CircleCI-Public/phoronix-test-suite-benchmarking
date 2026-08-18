@@ -22,6 +22,10 @@ workflows:
           executor: gen2
           result: gen2
       - benchmark:
+          name: machine-gen2
+          executor: machine-gen2
+          result: machine-gen2
+      - benchmark:
           name: gen3
           executor: gen3
           result: gen3
@@ -30,6 +34,7 @@ workflows:
             - gen1
             - gen2
             - gen3
+            - machine-gen2
 
 executors:
   gen1:
@@ -40,6 +45,10 @@ executors:
     resource_class: large.gen2
     docker:
       - image: cimg/base:current-24.04
+  machine-gen2:
+    resource_class: large.gen2
+    machine:
+      image: ubuntu-2404:current
   gen3:
     resource_class: large.gen3
     machine:
@@ -79,7 +88,7 @@ jobs:
       - run:
           name: Merge test results into HTML report
           command: |
-            results=(gen1 gen2 gen3)
+            results=(gen1 gen2 gen3 machine-gen2)
             # x86 dir only exists if the GHA fetch above succeeded.
             [ -d "$HOME/.phoronix-test-suite/test-results/x86" ] && results+=(x86)
             ./scripts/report.sh "${results[@]}"
