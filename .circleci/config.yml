@@ -36,6 +36,53 @@ workflows:
             - gen3
             - machine-gen2
 
+  windows-benchmark:
+    jobs:
+      # Gen1 -- windows-server-2025-gui:current
+      - win-benchmark:
+          name: win-gen1-<< matrix.size >>
+          matrix:
+            parameters:
+              size: ["medium", "large", "xlarge", "2xlarge"]
+          image: windows-server-2025-gui:current
+          rc-suffix: ""
+          result-prefix: win-gen1
+      # Gen2 standard AMI -- windows-server-2025:2026.08.1
+      - win-benchmark:
+          name: win-gen2-<< matrix.size >>
+          matrix:
+            parameters:
+              size: ["medium", "large", "xlarge", "2xlarge", "2xlarge+"]
+          image: "windows-server-2025:2026.08.1"
+          rc-suffix: ".gen2"
+          result-prefix: win-gen2
+      # Gen2 optimized AMI -- windows-server-2025:2026.08.2
+      - win-benchmark:
+          name: win-gen2opt-<< matrix.size >>
+          matrix:
+            parameters:
+              size: ["medium", "large", "xlarge", "2xlarge", "2xlarge+"]
+          image: "windows-server-2025:2026.08.2"
+          rc-suffix: ".gen2"
+          result-prefix: win-gen2opt
+      # Merge all Windows results on Linux
+      - win-results:
+          requires:
+            - win-gen1-medium
+            - win-gen1-large
+            - win-gen1-xlarge
+            - win-gen1-2xlarge
+            - win-gen2-medium
+            - win-gen2-large
+            - win-gen2-xlarge
+            - win-gen2-2xlarge
+            - "win-gen2-2xlarge+"
+            - win-gen2opt-medium
+            - win-gen2opt-large
+            - win-gen2opt-xlarge
+            - win-gen2opt-2xlarge
+            - "win-gen2opt-2xlarge+"
+
 executors:
   gen1:
     resource_class: large
@@ -55,6 +102,7 @@ executors:
       image: ubuntu-2404:current
 
 jobs:
+  # --- Linux benchmark job ---
   benchmark:
     parameters:
       executor:
@@ -103,7 +151,56 @@ jobs:
       - store_artifacts:
           path: reports
 
+  # --- Windows benchmark job (parameterized via matrix) ---
+  win-benchmark:
+    parameters:
+      size:
+        type: string
+      image:
+        type: string
+      rc-suffix:
+        type: string
+        default: ""
+      result-prefix:
+        type: string
+    machine:
+      image: << parameters.image >>
+      shell: powershell.exe
+    resource_class: windows.<< parameters.size >><< parameters.rc-suffix >>
+    steps:
+      - win-install
+      - win-benchmark:
+          result: << parameters.result-prefix >>-<< parameters.size >>
+
+  win-results:
+    executor: gen2
+    steps:
+      - install:
+          install-tests: false
+      - attach_workspace:
+          at: /home/circleci/.phoronix-test-suite/test-results
+      - run:
+          name: Merge Windows test results into HTML report
+          command: |
+            results=(
+              win-gen1-medium win-gen1-large win-gen1-xlarge win-gen1-2xlarge
+              win-gen2-medium win-gen2-large win-gen2-xlarge win-gen2-2xlarge win-gen2-2xlarge+
+              win-gen2opt-medium win-gen2opt-large win-gen2opt-xlarge win-gen2opt-2xlarge win-gen2opt-2xlarge+
+            )
+            ./scripts/report.sh "${results[@]}"
+      - run:
+          name: Pack test results
+          command: tar czfv win-test-results.tgz ~/.phoronix-test-suite/test-results
+          when: always
+      - store_artifacts:
+          path: "/home/circleci/.phoronix-test-suite/test-results"
+      - store_artifacts:
+          path: win-test-results.tgz
+      - store_artifacts:
+          path: reports
+
 commands:
+  # --- Linux commands ---
   install:
     parameters:
       install-tests:
@@ -126,5 +223,42 @@ commands:
           command: ./scripts/benchmark.sh << parameters.result >>
       - persist_to_workspace:
           root: /home/circleci/.phoronix-test-suite/test-results
+          paths:
+            - << parameters.result >>
+
+  # --- Windows commands ---
+  win-install:
+    parameters:
+      install-tests:
+        type: boolean
+        default: true
+    steps:
+      - checkout
+      - run:
+          name: Install PTS<<# parameters.install-tests >> + benchmark tests<</ parameters.install-tests >>
+          no_output_timeout: 30m
+          command: |
+            $env:PTS_INSTALL_TESTS = "<< parameters.install-tests >>"
+            & .\scripts\windows\install.ps1
+
+  win-benchmark:
+    parameters:
+      result:
+        type: string
+    steps:
+      - run:
+          name: Run benchmark
+          no_output_timeout: 60m
+          command: |
+            & .\scripts\windows\benchmark.ps1 "<< parameters.result >>"
+      - run:
+          name: Stage results for workspace
+          command: |
+            $src = "$env:USERPROFILE\.phoronix-test-suite\test-results\<< parameters.result >>"
+            $dest = ".\test-results\<< parameters.result >>"
+            New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null
+            Copy-Item -Recurse -Force $src $dest
+      - persist_to_workspace:
+          root: test-results
           paths:
             - << parameters.result >>
